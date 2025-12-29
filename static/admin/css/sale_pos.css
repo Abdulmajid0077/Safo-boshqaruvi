@@ -1,0 +1,32 @@
+/* Faqat Sale admin sahifasi */
+.model-sale [data-inline-formset] {
+    border-radius: 12px;
+    padding: 12px;
+}
+
+/* Inline itemlar */
+.model-sale [data-inline-formset] .form-row {
+    border-radius: 10px;
+    margin-bottom: 8px;
+}
+
+/* Inputlar – Unfold rangini saqlaydi */
+.model-sale [data-inline-formset] input,
+.model-sale [data-inline-formset] select {
+    border-radius: 10px;
+}
+
+/* Total ajralib tursin */
+.model-sale .field-total_price {
+    font-weight: 600;
+}
+
+/* Katta total (agar total_display bo‘lsa) */
+.model-sale .field-total_display {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.model-sale .inline-group {
+    border-radius: 14px;
+}
