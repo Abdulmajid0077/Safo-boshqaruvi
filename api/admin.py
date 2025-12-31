@@ -1,24 +1,32 @@
 from django.contrib import admin
-from django.contrib.admin import ModelAdmin
+from unfold.admin import ModelAdmin
 from django.contrib.humanize.templatetags.humanize import intcomma
-from django.forms.widgets import SplitDateTimeWidget
 from decimal import Decimal
 from django import forms
 from .models import Branch, Worker, Product, Supplier, Customer, Sale, SaleItem, AddProduct, History, AddProductItem, Expense, Investor, DailyReport
 
 @admin.register(Branch)
-class BranchAdmin(admin.ModelAdmin):
+class BranchAdmin(ModelAdmin):
     list_display = ('id','name', 'location')
     search_fields = ('name', 'location')
     ordering = ('-id',)
 
 @admin.register(Investor)
-class InvestorAdmin(admin.ModelAdmin):
+class InvestorAdmin(ModelAdmin):
     list_display = ('name', 'surname', 'age', 'phone_number', 'formatted_invest', 'created_at')
     search_fields = ('name',)
     autocomplete_fields = ('branch', )
     list_filter = ('branch', )
     ordering = ('-created_at',)
+
+    fieldsets = (
+        ("Filial", {
+            "fields": ("branch", )
+        }),
+        ("Investor ma’lumotlari", {
+            "fields": ("name", "surname", "age", "phone_number", "invest", "currency"),
+        }),
+    )
 
     @admin.display(description="Sarmoya ")
     def formatted_invest(self, obj):
@@ -45,7 +53,7 @@ class WorkerAdmin(admin.ModelAdmin):
 
 
 @admin.register(Product)
-class ProductAdmin(admin.ModelAdmin):
+class ProductAdmin(ModelAdmin):
     list_display = ('name', 'barcode', 'formatted_cost_price', 'formatted_sale_price', 'quantity_format')
     search_fields = ('name', 'barcode')
     autocomplete_fields = ('branch', )
@@ -63,6 +71,24 @@ class ProductAdmin(admin.ModelAdmin):
 
         
         return f"{amount_str} dona"
+    
+    fieldsets = (
+        ('Mahsulot maʼlumotlari', {
+            'fields': ('branch', 'name', 'barcode', 'quantity'),
+        }),
+        (
+            'Mahsulot narxlari', {
+                'fields' : (
+                    'cost_price', 'sale_price'
+                )
+            }
+        ),
+        (
+            'Mahsulot birligi', {
+                'fields': ('base_unit', 'kg_to_pcs')
+            }
+        )
+    )
         
 
 
@@ -121,10 +147,7 @@ class SaleItemForm(forms.ModelForm):
         model = SaleItem
         fields = '__all__'
         widgets = {
-            'quantity': forms.NumberInput(attrs={
-                'class': 'custom-input',
-                'placeholder': 'Miqdor',
-            }),
+            'quantity': forms.NumberInput(attrs={'step': '0.001'}),
         }
 
 
@@ -133,13 +156,16 @@ class SaleItemInline(admin.TabularInline):
     form = SaleItemForm
     extra = 1
     autocomplete_fields = ('product',)
-    fields = ('product', 'quantity', 'total_price')
     readonly_fields = ('total_price',)
-
+    fieldsets = (
+        ('🧾 Mahsulotlar ro\'yhati', {
+            'fields': ('product', 'quantity', 'total_price'),
+        }),
+        )
 
 
 @admin.register(Sale)
-class SaleAdmin(admin.ModelAdmin):
+class SaleAdmin(ModelAdmin):
     list_display = ('worker', 'amount_with_currency', 'formatted_discount', 'formatted_total_price', 'sold_at',)
     autocomplete_fields = ('customer', 'worker', 'branch')
     search_fields = ('worker', )
@@ -207,7 +233,7 @@ class AddProductItemInline(admin.TabularInline):
 
 
 @admin.register(AddProduct)
-class AddProductAdmin(admin.ModelAdmin):
+class AddProductAdmin(ModelAdmin):
     inlines = [AddProductItemInline]
     list_display = ('id', 'worker', 'added_at')
     autocomplete_fields = ('branch', 'worker', 'supplier')
@@ -273,7 +299,12 @@ class ExpenseAdmin(admin.ModelAdmin):
 
 @admin.register(DailyReport)
 class DailyReportAdmin(ModelAdmin):
-    list_display = ["start_datetime", "end_datetime", "created_at"]
+    list_display = (
+        "end_date_display",
+        'total_sales_display', 'total_discounts_display',
+        'total_purchase_display', 'total_debt_display'
+    )
+
     search_fields = ["branch", ]
     list_filter = ["branch", ]
     autocomplete_fields = ["branch", ]
@@ -289,5 +320,41 @@ class DailyReportAdmin(ModelAdmin):
             "fields": ("total_sales",),
         }),
     )
+    # 🔹 Total sales
+    @admin.display(description="Jami kassa")
+    def total_sales_display(self, obj):
+        value = obj.total_sales or Decimal('0')
+        # Agar butun bo‘lsa nolsiz chiqarish, aks holda normal format
+        if value == value.to_integral_value():
+            return f"{int(value):,} so'm"
+        return f"{value:,} so'm"
+
+    # 🔹 Total discounts
+    @admin.display(description="Jami chegirmalar")
+    def total_discounts_display(self, obj):
+        value = obj.total_discounts or Decimal('0')
+        if value == value.to_integral_value():
+            return f"{int(value):,} so'm"
+        return f"{value:,} so'm"
+
+    # 🔹 Total purchase
+    @admin.display(description="Jami sotib olishlar")
+    def total_purchase_display(self, obj):
+        value = obj.total_purchase or Decimal('0')
+        if value == value.to_integral_value():
+            return f"{int(value):,} so'm"
+        return f"{value:,} so'm"
+
+    # 🔹 Total debt
+    @admin.display(description="Jami qarzlar")
+    def total_debt_display(self, obj):
+        value = obj.total_debt or Decimal('0')
+        if value == value.to_integral_value():
+            return f"{int(value): ,} so'm"
+        return f"{value:,} so'm"
+    
+    @admin.display(description="Hiosbot sanasi")
+    def end_date_display(self, obj):
+        return obj.end_datetime.date()
 
 

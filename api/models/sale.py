@@ -8,7 +8,7 @@ class Customer(models.Model):
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='customers', verbose_name="Filial")
     name = models.CharField(max_length=100, verbose_name="Ismi")
     phone_number = models.CharField(max_length=15, verbose_name="Telefon raqami")
-    debt = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Qarz miqdori")
+    debt = models.DecimalField(max_digits=18, decimal_places=2, default=0.00, verbose_name="Qarz miqdori")
     description = models.TextField(blank=True, null=True, verbose_name="Izoh")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Kiritilgan vaqti")
 
@@ -31,10 +31,10 @@ class Sale(models.Model):
         related_name='sales', verbose_name="Hodim"
     )
 
-    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="To'plam")
-    amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="To'langan summa")
+    total_price = models.DecimalField(max_digits=18, decimal_places=2, default=0.00, verbose_name="To'plam")
+    amount = models.DecimalField(max_digits=18, decimal_places=2, verbose_name="To'langan summa")
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES,default='UZS', verbose_name="Valyuta")
-    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Chegirma")
+    discount = models.DecimalField(max_digits=18, decimal_places=2, default=0.00, verbose_name="Chegirma")
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='sales', null=True, blank=True, verbose_name="Qarzdor")
     sold_at = models.DateTimeField(auto_now_add=True, verbose_name="Sotish vaqti")
 
@@ -66,12 +66,12 @@ class Sale(models.Model):
         is_new = self.pk is None
 
         old_amount = Decimal('0')
-        if not is_new:
-            old_amount = Decimal(
-                str(Sale.objects.get(pk=self.pk).amount or 0)
-            )
+        old_customer = None
 
-        self._recalc_discount()
+        if not is_new:
+            old_sale = Sale.objects.select_for_update().get(pk=self.pk)
+            old_amount = Decimal(str(old_sale.amount or 0))
+            old_customer = old_sale.customer
 
         if self.customer:
             customer_obj, _ = Customer.objects.get_or_create(
@@ -86,31 +86,68 @@ class Sale(models.Model):
 
         super().save(*args, **kwargs)
 
-        if self.customer:
-            new_amount = Decimal(str(self.amount or 0))
-            debt_diff = new_amount - old_amount
+        new_amount = Decimal(str(self.amount or 0))
 
-            if debt_diff != 0:
-                self.customer.debt = (
-                    self.customer.debt or Decimal('0')
-                ) + debt_diff
+        # 🟢 CASE 1: yangi sale
+        if is_new:
+            if self.customer:
+                self.customer.debt += new_amount
                 self.customer.save(update_fields=['debt'])
+            return
+
+        # 🟢 CASE 2: old_customer YO‘Q → customer QO‘SHILDI
+        if old_customer is None and self.customer is not None:
+            self.customer.debt += new_amount
+            self.customer.save(update_fields=['debt'])
+            return
+
+        # 🟢 CASE 3: customer olib tashlandi
+        if old_customer and self.customer is None:
+            old_customer.debt -= old_amount
+            if old_customer.debt < 0:
+                old_customer.debt = Decimal('0')
+            old_customer.save(update_fields=['debt'])
+            return
+
+        # 🟢 CASE 4: customer o‘zgarmagan
+        if old_customer == self.customer:
+            diff = new_amount - old_amount
+            if diff != 0:
+                self.customer.debt += diff
+                if self.customer.debt < 0:
+                    self.customer.debt = Decimal('0')
+                self.customer.save(update_fields=['debt'])
+            return
+
+        # 🟢 CASE 5: customer ALMASHDI
+        if old_customer and self.customer and old_customer != self.customer:
+            old_customer.debt -= old_amount
+            if old_customer.debt < 0:
+                old_customer.debt = Decimal('0')
+            old_customer.save(update_fields=['debt'])
+
+            self.customer.debt += new_amount
+            self.customer.save(update_fields=['debt'])
+
+
 
     @transaction.atomic
     def delete(self, *args, **kwargs):
-            if self.customer:
-                self.customer.debt -= self.amount
-                if self.customer.debt < 0:
-                    self.customer.debt = 0
-                self.customer.save()
-            super().delete(*args, **kwargs)
+        if self.customer:
+            self.customer.debt -= self.amount or Decimal('0')
+            if self.customer.debt < 0:
+                self.customer.debt = Decimal('0')
+            self.customer.save(update_fields=['debt'])
+
+        super().delete(*args, **kwargs)
+
     
             
 class SaleItem(models.Model):
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="Mahsulot")
     quantity = models.DecimalField(max_digits=12, decimal_places=3, verbose_name="Miqdor")
-    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    total_price = models.DecimalField(max_digits=18, decimal_places=2, default=0.00)
     sold_at = models.DateTimeField(auto_now_add=True, verbose_name="Sotish vaqti")
 
     def __str__(self):
@@ -160,14 +197,14 @@ from django.db import models
 from django.db.models import Sum
 
 class DailyReport(models.Model):
-    branch = models.ForeignKey('Branch', on_delete=models.CASCADE, related_name='daily_reports', verbose_name="Filial")
+    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='daily_reports', verbose_name="Filial")
     start_datetime = models.DateTimeField(verbose_name="Qachondan ")
     end_datetime = models.DateTimeField(verbose_name="Qachongahca ")
     
-    total_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Jami kassa")
-    total_discounts = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Jami chegirmalar")
-    total_purchase = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Jami sotib olishlar")
-    total_debt = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Jami qarzlar")   
+    total_sales = models.DecimalField(max_digits=18, decimal_places=2, default=0, verbose_name="Jami kassa")
+    total_discounts = models.DecimalField(max_digits=18, decimal_places=2, default=0, verbose_name="Jami chegirmalar")
+    total_purchase = models.DecimalField(max_digits=18, decimal_places=2, default=0, verbose_name="Jami sotib olishlar")
+    total_debt = models.DecimalField(max_digits=18, decimal_places=2, default=0, verbose_name="Jami qarzlar")   
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Yaratilgan vaqti")
     
     
@@ -176,7 +213,7 @@ class DailyReport(models.Model):
     
     def save(self, *args, **kwargs):
         if self.branch and self.start_datetime and self.end_datetime:
-            # Jami savdo va chegirmalar
+            # Sales
             sales_qs = Sale.objects.filter(
                 branch=self.branch,
                 sold_at__gte=self.start_datetime,
@@ -185,16 +222,17 @@ class DailyReport(models.Model):
             self.total_sales = sales_qs.aggregate(total=Sum('total_price'))['total'] or 0
             self.total_discounts = sales_qs.aggregate(total=Sum('discount'))['total'] or 0
 
-            # Jami sotib olishlar (AddProductItem summasidan)
+            # Purchases
             purchase_qs = AddProductItem.objects.filter(
-                branch=self.branch,
+                add_product__branch=self.branch,
                 added_at__gte=self.start_datetime,
                 added_at__lte=self.end_datetime
             )
             self.total_purchase = purchase_qs.aggregate(total=Sum('total_price'))['total'] or 0
 
-            # Jami qarzlar (branch bo‘yicha)
+            # Debts
             debt_qs = Customer.objects.filter(branch=self.branch)
             self.total_debt = debt_qs.aggregate(total=Sum('debt'))['total'] or 0
 
         super().save(*args, **kwargs)
+

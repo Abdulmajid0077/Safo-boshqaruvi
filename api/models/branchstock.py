@@ -19,7 +19,7 @@ class Investor(models.Model):
     surname = models.CharField(max_length=100, verbose_name="Familyasi")
     age = models.CharField(max_length=100, verbose_name="Yoshi")
     phone_number = models.CharField(max_length=15, verbose_name="Telefon raqami")
-    invest = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Sarmoya miqdori")
+    invest = models.DecimalField(max_digits=18, decimal_places=2, default=0.00, verbose_name="Sarmoya miqdori")
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='UZS', verbose_name="Valyuta")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Kiritilgan vaqti")
 
@@ -50,7 +50,7 @@ class Product(models.Model):
         ('kg', 'Kilogramm'),
     )
 
-    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='products')
+    branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='products', verbose_name="Filial")
     name = models.CharField(max_length=100, verbose_name="Mahsulot nomi")
     barcode = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="Shtrixkod")
     quantity = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal('0'), verbose_name="Mavjud miqdor (dona)")
@@ -113,7 +113,7 @@ class AddProductItem(models.Model):
     )
 
     total_price = models.DecimalField(
-        max_digits=14,
+        max_digits=18,
         decimal_places=2,
         default=Decimal('0'),
         verbose_name="Jami narx"
@@ -204,7 +204,7 @@ class Expense(models.Model):
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, related_name='expenses', null=True, verbose_name="Filial")
     worker = models.ForeignKey(Worker, on_delete=models.CASCADE, related_name='expenses', verbose_name="Hodim")
     category = models.CharField(max_length=50, choices=EXPENSE_CATEGORIES, verbose_name="Sababi")
-    amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Summa")
+    amount = models.DecimalField(max_digits=18, decimal_places=2, verbose_name="Summa")
     description = models.TextField(blank=True, null=True, verbose_name="Izoh")
     incurred_at = models.DateTimeField(auto_now_add=True, verbose_name="Olish vaqti")
 
